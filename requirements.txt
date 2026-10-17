@@ -1,0 +1,54 @@
+# UPC 2026 数值计算环境依赖
+# 环境：upc (Python 3.11.17)，位置 D:\anaconda\envs\upc
+#
+# 复现方式（换机器 / 重装时用）：
+#   conda create -n upc python=3.11 -y
+#   conda activate upc
+#   pip install -r requirements.txt -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
+#
+# 装完跑 `python check_env.py` 自检，9 项全 PASS 才开赛。
+
+# ===== 核心（计划书 §2 指定的 7 个）=====
+numpy==2.4.6            # 数组/矩阵运算，所有数值库的底座
+scipy==1.17.1           # 数值积分、求根、优化、插值、信号处理、稀疏矩阵
+sympy==1.14.0           # 符号推导：解析解、公式化简、LaTeX 输出
+matplotlib==3.11.2      # 绘图底座，论文用图（需配置中文字体）
+pandas==3.0.6           # 表格数据清洗、分组聚合、时间序列
+pint==0.25.3            # 物理量单位换算与量纲检查
+uncertainties==3.2.3    # 误差传播：ufloat 自动合成不确定度
+
+# ===== 补充 A：单位 / 数据 I-O =====
+pint-pandas==0.8.0      # pint 单位与 pandas DataFrame 打通（独立小包）
+openpyxl==3.1.5         # pandas 读写 .xlsx
+xlrd==2.0.2             # 读取老格式 .xls（xlrd 2.x 已不支持 xlsx）
+pyarrow==26.0.0         # pandas 读写 parquet / 字符串加速
+chardet==7.6.0          # 读脏数据时先探测编码，避免 UnicodeDecodeError
+jinja2==3.1.6           # 模板渲染：批量生成报告/LaTeX 片段
+
+# ===== 补充 B：统计 / 拟合 / 绘图 =====
+statsmodels==0.15.0     # 回归、时间序列（含 ARIMA）、统计检验
+seaborn==0.13.2         # 基于 matplotlib 的统计绘图：热力图、分布图
+plotly==7.1.0           # 交互式图表，导出 HTML 可缩放
+pillow==12.3.0          # 位图读写：拼图、加水印、格式转换
+
+# ===== 补充 C：交互 / 效率 =====
+jupyterlab==4.6.4       # 交互式笔记本（含 notebook 7.6.3）
+ipykernel==7.4.0        # Jupyter 内核
+ipywidgets==8.1.9       # 笔记本内滑块等交互控件
+tqdm==4.70.1            # 长循环进度条，判断"卡死还是没卡死"
+numba==0.68.0           # JIT 加速热点数值循环。实测不影响 numpy 版本（要求 numpy<2.6）
+
+# ===== 额外补（计划书没要求，属武器库，可按需删）=====
+scikit-learn==1.9.1     # 回归/分类/聚类/降维
+networkx==3.6.1         # 图论：最短路、最小生成树、网络流
+cvxpy==1.9.3            # 凸优化建模，自带 OSQP/Clarabel/SCS
+pulp==3.3.2             # 线性/整数规划，自带 CBC 求解器
+scikit-opt==0.6.6       # 遗传 GA / 粒子群 PSO / 模拟退火 SA / 差分进化 DE（import 名是 sko）
+python-docx==1.2.0      # 生成 Word 版摘要/论文
+pymupdf==1.28.2         # PDF 文本与图片提取
+
+# ===== 按需安装（本次未装）=====
+# geopandas      # 地图/地理数据；依赖 shapely+pyproj，体积较大
+# kaleido        # plotly 静态图片导出；新版需系统已装 Chrome
+# gurobipy       # 商用求解器（学术免费需申请 license），大规模 MIP 才需要
+# 安装命令示例：pip install geopandas -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple

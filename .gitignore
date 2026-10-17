@@ -1,0 +1,29 @@
+# ==== Python 缓存 ====
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+.venv/
+venv/
+
+# ==== 运行产物（随时可由脚本重新生成，不入库）====
+# test.py 输出的轨迹图
+figs/
+# check_env.py 输出的自检报告与测试图
+_env_check/
+
+# ==== 本地工作记忆（AI 过程日志，不入库）====
+.ai-memory/
+
+# ==== 编辑器 / 系统文件 ====
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ==== 凭据（绝不入库）====
+.env
+.env.*
+*.key
+*.pem

@@ -1,0 +1,9 @@
+unit check: OK, characteristic time ~ 45.87 s
+feasible angles for 1200 m: ['2.72 deg', '77.06 deg']
+check: range=1200.0 m  flight=3.77 s  maxalt=17.6 m
+  Cd x0.8 -> range 1292.1 m
+  Cd x0.9 -> range 1244.0 m
+  Cd x1.0 -> range 1200.0 m
+  Cd x1.1 -> range 1159.6 m
+  Cd x1.2 -> range 1122.3 m
+vacuum check: numeric=1955.7 m analytic=1955.7 m diff=0.000%
