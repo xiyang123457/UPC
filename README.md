@@ -67,8 +67,9 @@ jupyter lab
 | `B1-环境快照-lock.txt` | `pip freeze` 全量锁定，用于精确复现环境 |
 | `B2-绘图模板/` | 论文用三套出图模板：`单图.py` / `多子图.py` / `双对数.py`（300 dpi、英文图注、带单位） |
 | `B3-同步会安排.md` | 队内同步会规范（频率、三问、会后记录模板） |
-| `code/` | 比赛代码目录，命名约定见其 README（目前为空） |
+| `code/` | 比赛代码目录，命名约定见其 README；另含七段结构骨架 `skeleton_template.py` 与换题对照版 `demo_swap_rhs.py` |
 | `refs/gold_papers/` | 往届金奖论文存放处，用法见其 README（目前为空） |
+| `W2-B1-代码组织模板.md` | **W2 任务 1**：七段结构 + 三条命名规矩 + 自检放置规则 + 完整骨架，配套 `code/skeleton_template.py` |
 
 ## 三条硬规则
 
