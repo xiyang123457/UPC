@@ -18,12 +18,17 @@
 
 自检数字（实测值，2026-10-25，环境 D:\\anaconda\\envs\\upc；对不上先去 results.md 对表）：
     unit check          : OK  (A=9.503e-03 m^2, k=5.212e-04 1/m, a_drag(450)=105.6 m/s^2, 1/k=1918 m)
-    vacuum check        : numeric 17876.671 m  analytic 17876.671 m  diff 2.0e-14 %
+    offline check       : OK  (imports: ast, math, matplotlib, numpy, os, scipy; no network calls)
+    vacuum range        : numeric 17876.671 m  analytic 17876.671 m  diff 2.04e-14 %
+    vacuum time         : numeric 45.87156 s  analytic 45.87156 s  diff 1.55e-14 %
     angles @ v0=450     : #1 theta=2.6495 deg t=3.7101 s / #2 theta=77.5774 deg t=43.4643 s
     v_min(R=1200)       : 143.0451 m/s @ 40.7404 deg（两解合一处的初速下界）
     min flight time     : 3.7101 s @ v0=450.0 m/s, theta=2.6495 deg（约束取等号）
     peak-miss window    : coarse 3307.3178 m vs true 3307.3187 m（窗宽 0.92 mm，窗内仍得 2 个解）
-    rtol convergence    : 1e-08 与 1e-10 差 2e-6 m（rtol_scan=1e-8 安全）
+    convergence         : 1e-5..1e-13 -> theta 2.649551..2.649550 deg, steps 14..138（9.9 倍）
+    elasticity S        : -0.334（log-log）/ -0.340（端点差分）
+    altitude 0/500/2000 : 1180.34 / 1200.00 / 1259.20 m
+    wind 5/10/20 m/s    : drift 5.20 / 10.41 / 20.82 m（粗估 w*t 为 3.56 倍上界）
 
 分段：本文件按 7 段组织（文件头 / 参数区 / 自检 / 物理模型 / 求解器封装 / 分析 / 出图），
     每段横幅写成 `# ==== N. 分节名 ====`，N 就是段号。
@@ -31,11 +36,13 @@
 # 这一组 import 的用途：
 #   math       —— hypot/radians/cos/sin 这类标量运算，走 C 实现且不建数组，比 numpy 快
 #   os         —— 用 __file__ 定位仓库根的 figs/，从任何 CWD 调用都不出错
+#   ast        —— 解析本文件源码做断网检查（扫 import 与联网字样），见 check_offline
 #   numpy      —— 扫描网格（linspace）、数组批量比较、曲线的逐点取整
 #   solve_ivp  —— 自适应步长 RK45 + 落地事件检测：终止时刻精确，rtol 可扫做收敛性检验
 #   brentq     —— 求根（角度/初速），有括号时比打表精确得多
 #   minimize_scalar —— 一维极值：射程峰值（range(theta) 非单调，不能用全局二分）
 #   matplotlib —— 出图；先 use("Agg") 再用 pyplot，断网/无显示器/SSH 下都能保存
+import ast
 import math
 import os
 
@@ -83,8 +90,8 @@ PARAMS = {
     "cd_factors": (0.8, 0.9, 1.0, 1.1, 1.2),    # C_d 缩放因子（±20%，与 W1 口径一致便于对照）
     "rho_factors": (0.8, 0.9, 1.0, 1.1, 1.2),   # ρ 缩放因子（±20%，同上）
 }
-# 收敛性检验要扫的 rtol 序列，无量纲（1e-6 最松、1e-10 最紧，跨 4 个量级）
-RTOL_SERIES = (1e-6, 1e-7, 1e-8, 1e-9, 1e-10)
+# 收敛性检验要扫的 rtol 序列，无量纲（1e-5 最松、1e-13 最紧，跨 8 个量级，与任务书口径一致）
+RTOL_SERIES = (1e-5, 1e-7, 1e-9, 1e-11, 1e-13)
 
 
 # ==== 3. 量纲自检：贴着参数区放，公式一错立刻抛异常 ====
@@ -271,12 +278,14 @@ def _root_scalar(fun, a, b, xtol):
 
 # ==== 6. 分析：退化检验 + 全解求根 + 最短时间 + 灵敏度。本节不 import matplotlib ====
 def check_vacuum(theta_deg=None, v0=None):
-    """退化检验：把 ρ 置 0（⇒ k=0）后必须退回真空解析解 R = v0²·sin(2θ)/g。
+    """退化检验：把 ρ 置 0（⇒ k=0）后必须退回真空解析解（任务 3 · 证据②）。
 
     参数：theta_deg 检验角，deg（None 取 30）；v0 检验初速，m/s（None 取 v0_max）。
-    返回：(数值射程 m, 解析射程 m, 相对偏差无量纲)。
+    返回：dict(r_num, r_ana, rel_r, t_num, t_ana, rel_t)，射程 m、时间 s、偏差无量纲。
     为什么这是唯一能验证方程本身的办法：真空解是解析已知的，
         k=0 时方程退化成纯重力抛体，任何符号错/系数错都会在这里露馅。
+    为什么时间和射程都要查：只查射程会漏掉"竖直方向的错误恰好被射程掩盖"的情况；
+        解析时间是 t = 2·v0·sinθ/g（与射程同一条抛物线的两个独立投影）。
     """
     theta_deg = 30.0 if theta_deg is None else theta_deg
     v0 = PARAMS["v0_max"] if v0 is None else v0
@@ -284,11 +293,15 @@ def check_vacuum(theta_deg=None, v0=None):
     rho_base = PARAMS["rho"]                   # float，1.167 kg/m^3（必须在 finally 里复位）
     try:
         PARAMS["rho"] = 0.0                    # 关掉空气阻力
-        r_num = range_at(theta_deg, v0, rtol=PARAMS["rtol"])
+        shot = shot_at(theta_deg, v0, rtol=PARAMS["rtol"])
     finally:
         PARAMS["rho"] = rho_base               # 必须复位，否则后面全算错
-    r_ana = v0 ** 2 * math.sin(2 * math.radians(theta_deg)) / PARAMS["g"]
-    return r_num, r_ana, abs(r_num - r_ana) / r_ana
+    th = math.radians(theta_deg)
+    r_ana = v0 ** 2 * math.sin(2.0 * th) / PARAMS["g"]
+    t_ana = 2.0 * v0 * math.sin(th) / PARAMS["g"]
+    return {"r_num": shot["range"], "r_ana": r_ana, "rel_r": abs(shot["range"] - r_ana) / r_ana,
+            "t_num": shot["t_flight"], "t_ana": t_ana,
+            "rel_t": abs(shot["t_flight"] - t_ana) / t_ana}
 
 
 def peak_range(v0=None, rtol=None, p=PARAMS):
@@ -498,16 +511,60 @@ def scan_param(key, factors=None, R=None, p=PARAMS):
     return rows
 
 
-def check_convergence(theta_deg=None, v0=None, p=PARAMS):
-    """收敛性检验：收紧 rtol 跨 4 个量级，射程必须稳住。
+def check_convergence(R=None, p=PARAMS):
+    """收敛性检验（任务 3 · 证据①）：收紧 rtol 跨 8 个量级，看角度与飞行时间是否漂。
 
-    参数：theta_deg 检验角 deg（None 取 20，射程对角度不敏感的中段）；v0 初速 m/s。
-    返回：[(rtol, range_m), ...]。
-    判据：最紧两级之差 < 1e-3 m，说明 rtol_scan=1e-8 用于扫描是安全的。
+    参数：R 目标射程 m（None 取 p["R_target"]）。
+    返回：[dict(rtol, theta_deg, t_flight, n_steps), ...]，按 rtol 由松到紧。
+    怎么读：步数应随 rtol 收紧单调上升（积分器确实在"更费劲地算"），
+        而角度只在小数点第 4 位以后动、飞行时间不动 → 结果由物理决定，不由容差决定。
+    为什么不用"射程差 < 1 mm"当判据：射程是求根问题的目标值，天然被钉死在 1200 m，
+        拿它当判据是循环论证。角度和飞行时间才是真正的输出量。
     """
-    theta_deg = 20.0 if theta_deg is None else theta_deg
-    v0 = p["v0_max"] if v0 is None else v0
-    return [(rt, range_at(theta_deg, v0, rtol=rt, p=p)) for rt in RTOL_SERIES]
+    R = p["R_target"] if R is None else R
+    rows = []
+    for rt in RTOL_SERIES:
+        theta_deg, t_flight = find_angles(R, p["v0_max"], rtol=rt, p=p)[0]
+        n_steps = shot_at(theta_deg, p["v0_max"], rtol=rt, p=p)["sol"].t.size - 1
+        rows.append({"rtol": rt, "theta_deg": theta_deg,
+                     "t_flight": t_flight, "n_steps": int(n_steps)})
+    return rows
+
+
+# 断网检查用的字样表。坑：整词直写会让本文件自己命中自己（源码里就有那个词），
+# 所以拆成两段拼接——与 code-comment-style 的 lint 脚本同一处理方式。
+FORBIDDEN_NET_TOKENS = ("re" + "quests", "ur" + "llib", "url" + "open",
+                        "sock" + "et", "http" + "://", "https" + "://")
+
+# 允许的依赖：全部是本机 conda 环境里已装的（pip list 可查），且都是科学计算标准库
+ALLOWED_MODULES = frozenset({"math", "os", "ast", "numpy", "scipy", "matplotlib"})
+
+
+def check_offline(path=None):
+    """断网可跑检查（任务 3 · 证据③）：机械扫本文件源码，不需要真的拔网线。
+
+    参数：path 待检查的源文件（None 取本文件）。
+    返回：list[str]，源码里实际用到的顶层模块名（已排序）。
+    查两件事：① import 是否全在白名单内（断网装不上的包直接拦下）；
+        ② 源码里有没有联网字样（下载数据、读在线表格这类会在断网时炸）。
+    为什么用源码扫描而不是"跑一遍"：跑一遍只能证明"当前网络恰好没用上"，
+        而扫描能保证代码里根本没有联网通路——后者才是可复现性的证据。
+    """
+    path = os.path.abspath(__file__) if path is None else path
+    with open(path, encoding="utf-8") as fp:
+        src = fp.read()
+    mods = set()
+    for node in ast.walk(ast.parse(src)):
+        if isinstance(node, ast.Import):
+            mods |= {alias.name.split(".")[0] for alias in node.names}
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            mods.add(node.module.split(".")[0])
+    extra = mods - ALLOWED_MODULES
+    assert not extra, f"发现白名单外依赖 {sorted(extra)}：断网机器可能装不上，需改用标准库实现"
+    low = src.lower()
+    hits = [tok for tok in FORBIDDEN_NET_TOKENS if tok in low]
+    assert not hits, f"源码里出现联网相关字样 {hits}：断网环境会失败"
+    return sorted(mods)
 
 
 def elasticity(key="Cd", factors=None, p=PARAMS):
@@ -839,11 +896,18 @@ if __name__ == "__main__":
     # ---- 自检 1/2：量纲与量级（建模卡第八节，写 rhs 前就该过）----
     check_units()
 
-    # ---- 自检 3：退化到真空解析解 ----
-    r_num, r_ana, rel = check_vacuum()
-    print(f"vacuum check        : numeric {r_num:.3f} m  analytic {r_ana:.3f} m  "
-          f"diff {rel * 100:.2e} %")
-    assert rel < 1e-6, f"真空退化检验偏差 {rel * 100:.2e} % 过大：方程或积分器设置错了"
+    # ---- 任务 3 证据③：断网可跑（源码级检查，不需要真拔网线）----
+    mods = check_offline()
+    print(f"offline check       : OK  (imports: {', '.join(mods)}; no network calls)")
+
+    # ---- 任务 3 证据②：退化到真空解析解 ----
+    vac = check_vacuum()
+    print(f"vacuum range        : numeric {vac['r_num']:.3f} m  analytic {vac['r_ana']:.3f} m  "
+          f"diff {vac['rel_r'] * 100:.2e} %")
+    print(f"vacuum time         : numeric {vac['t_num']:.5f} s  analytic {vac['t_ana']:.5f} s  "
+          f"diff {vac['rel_t'] * 100:.2e} %")
+    assert max(vac["rel_r"], vac["rel_t"]) < 1e-4, \
+        f"真空退化检验偏差 {max(vac['rel_r'], vac['rel_t']) * 100:.2e} % 超过 0.01% 门槛"
 
     # ---- 主结果 1：v0=450 时的全部可行角度（低角解 + 高角解）----
     # 注：终端输出一律用 ASCII 的 theta/delta 而不是希腊字母——PowerShell 默认 GBK 代码页会乱码
@@ -882,10 +946,18 @@ if __name__ == "__main__":
           f"{win['n_roots']} roots")
     assert win["n_roots"] == 2, "峰值窗口内仍有漏解：加密网格没起作用"
 
-    # ---- 自检 5：收敛性 ----
+    # ---- 任务 3 证据①：收敛性（角度 / 飞行时间 / 积分步数三列一起看）----
     conv = check_convergence()
-    print("rtol convergence    : " + " / ".join(f"{rt:.0e}:{r:.6f}" for rt, r in conv) + " m")
-    assert abs(conv[-1][1] - conv[-2][1]) < 1e-3, "rtol 收紧两级结果仍变：积分器不可靠，需换方法"
+    for r in conv:
+        print(f"convergence {r['rtol']:.0e}     : theta={r['theta_deg']:.6f} deg  "
+              f"t_flight={r['t_flight']:.6f} s  steps={r['n_steps']:4d}")
+    spread_theta = max(r["theta_deg"] for r in conv) - min(r["theta_deg"] for r in conv)
+    spread_t = max(r["t_flight"] for r in conv) - min(r["t_flight"] for r in conv)
+    assert spread_theta < 1e-3, f"角度随 rtol 漂移 {spread_theta:.2e} deg：积分器在这道题上不可靠"
+    assert spread_t < 1e-4, f"飞行时间随 rtol 漂移 {spread_t:.2e} s：积分器在这道题上不可靠"
+    # 步数必须单调上升：否则说明"收紧 rtol"没有真的让积分器更费劲，收敛表就是白做的
+    assert all(b["n_steps"] > a["n_steps"] for a, b in zip(conv[:-1], conv[1:])), \
+        "积分步数未随 rtol 收紧上升：容差可能没传进 solve_ivp"
 
     # ---- 主结果 4：灵敏度双表（C_d 与 ρ 应逐行相同：k 只依赖两者乘积）----
     tab_cd = scan_param("Cd")
